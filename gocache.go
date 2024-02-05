@@ -81,7 +81,10 @@ func (c *Cache) Delete(key string) error {
 }
 
 func (c *Cache) startGC() {
+	go c.gc()
+}
 
+func (c *Cache) gc() {
 	for {
 		<-time.After(c.cleanupInterval)
 
@@ -93,7 +96,6 @@ func (c *Cache) startGC() {
 			c.clearItems(keys)
 		}
 	}
-
 }
 
 func (c *Cache) expiredKeys() (keys []string) {
@@ -112,4 +114,46 @@ func (c *Cache) clearItems(keys []string) {
 	for _, k := range keys {
 		delete(c.items, k)
 	}
+}
+
+func (c *Cache) Count() int {
+	var count int
+	for range c.items {
+		count++
+	}
+	return count
+}
+
+func (c *Cache) GetItem(key string) (*Item, error) {
+	c.mu.RLock()
+	item, found := c.items[key]
+	c.mu.RUnlock()
+	if !found {
+		return nil, errors.New("key not found")
+	}
+	if item.Expiration > 0 {
+		if time.Now().UnixNano() > item.Expiration {
+			return nil, errors.New("key not found")
+		}
+	}
+	return &Item{
+		Value:      item.Value,
+		Expiration: item.Expiration,
+		Created:    item.Created,
+	}, nil
+}
+
+func (c *Cache) Expire(key string) bool {
+	c.mu.RLock()
+	item, found := c.items[key]
+	c.mu.RUnlock()
+	if !found {
+		return true
+	}
+	if item.Expiration > 0 {
+		if time.Now().UnixNano() > item.Expiration {
+			return true
+		}
+	}
+	return false
 }
